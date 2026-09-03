@@ -2,8 +2,6 @@
 
 #include "geometry.hpp"
 
-#include <string>
-
 /* ---------------------------------------------------------------------------
  * Robot -- the abstract base every chassis derives from.
  *
@@ -20,14 +18,14 @@
  *   2. It scatters the math across the type hierarchy, which is what the
  *      project's own hint warns against.
  *
- * So instead the base class asks each subclass only to DESCRIBE ITSELF, in the
- * one vocabulary the geometry kernel understands:
+ * So instead a subclass never implements a collision test at all. It answers
+ * exactly two questions about its own shape, and the geometry kernel does the
+ * rest:
  *
  *      core()        -- its convex hull of points, in world space
  *      skinRadius()  -- how far that hull is inflated
  *
- * A subclass never implements a collision test. It answers two questions about
- * its own shape and the kernel does the rest. Adding a new chassis is one new
+ * Two questions. That is the entire contract. Adding a new chassis is one new
  * class and zero edits anywhere else -- that is the payoff.
  * ------------------------------------------------------------------------- */
 class Robot {
@@ -35,7 +33,8 @@ public:
     Robot(double x, double y) : m_center(x, y) {}
 
     /* Virtual destructor: these are polymorphic types held by reference (and,
-     * in the demo, by base-class pointer), so this is non-negotiable. */
+     * in the all-pairs sweep, by base-class pointer), so this is
+     * non-negotiable. */
     virtual ~Robot() = default;
 
     Vec2 position() const { return m_center; }
@@ -52,13 +51,6 @@ public:
 
     /* How far the core is inflated. Zero for a polygonal chassis. */
     virtual double skinRadius() const = 0;
-
-    /* Radius of a circle centred on position() that fully encloses the robot.
-     * Used purely as a cheap broad-phase reject (see collision.hpp). It is
-     * always safe to overestimate this; never underestimate it. */
-    virtual double boundingRadius() const = 0;
-
-    virtual std::string describe() const = 0;
 
 protected:
     Vec2 m_center;
@@ -84,12 +76,6 @@ public:
 
     double skinRadius() const override { return m_radius; }
 
-    double boundingRadius() const override { return m_radius; }
-
-    std::string describe() const override {
-        return "circle r=" + std::to_string(m_radius);
-    }
-
 private:
     double m_radius;
 };
@@ -101,9 +87,11 @@ private:
  * defaults to 0, so every call in the provided driver still compiles and means
  * exactly what it meant before; but a real robot on a real field is almost
  * never axis-aligned, and the core/skin model gets rotation essentially for
- * free (rotate the four corners; the kernel neither knows nor cares). Solving
- * only the axis-aligned case here would have been leaving capability on the
- * table for no saving in complexity.
+ * free (rotate the four corners; the kernel neither knows nor cares).
+ *
+ * It is also the cheapest possible proof that the abstraction is real: if
+ * supporting rotation had required touching the geometry kernel, the claim
+ * that the kernel is blind to shape would have been false.
  * ------------------------------------------------------------------------- */
 class RectangularRobot : public Robot {
 public:
@@ -126,7 +114,7 @@ public:
 
         // Listed counter-clockwise. Winding is documented rather than relied
         // upon -- geom::contains() is order-agnostic -- but keeping it
-        // consistent makes the shape easy to reason about and to draw.
+        // consistent makes the shape easy to reason about.
         const Vec2 local[4] = {
             {-hw, -hh}, {+hw, -hh}, {+hw, +hh}, {-hw, +hh}
         };
@@ -140,19 +128,6 @@ public:
 
     /* A rectangle's boundary IS its core, so there is nothing to inflate. */
     double skinRadius() const override { return 0.0; }
-
-    /* Half the diagonal -- the corner is the farthest point from the centre.
-     * Note this is invariant under rotation, so a spinning robot does not need
-     * its broad-phase bound recomputed. */
-    double boundingRadius() const override {
-        const double hw = m_width  * 0.5;
-        const double hh = m_height * 0.5;
-        return std::sqrt(hw * hw + hh * hh);
-    }
-
-    std::string describe() const override {
-        return "rect " + std::to_string(m_width) + "x" + std::to_string(m_height);
-    }
 
 private:
     double m_width;

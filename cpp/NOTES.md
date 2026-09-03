@@ -1,7 +1,5 @@
 # Design notes
 
-My write-up of how this solution works and why it is built this way.
-
 ## The idea
 
 The straightforward way to solve this is one routine per pair of shape types:
@@ -37,14 +35,14 @@ collision system — everything else is machinery for evaluating its left side.
 What this buys:
 
 - **One code path.** No branching on shape type anywhere in the geometry.
-- **New shapes are free.** A capsule is two core points with a skin. A
+- **New shapes are nearly free.** A capsule is two core points with a skin. A
   rounded-corner bumper is four core points with a skin. An octagonal chassis is
   eight core points. Each is one new class and *zero* edits to existing code.
 - **Rotation is free.** Rotate the core's points; the kernel neither knows nor
-  cares. This is why `RectangularRobot` can take a heading.
-- **Containment is free.** "Is this point inside that robot?" is the same
-  inequality with one skin set to zero — which is exactly how the visualizer
-  draws the field, without a line of new geometry.
+  cares. That is why `RectangularRobot` can take a heading, and it is the
+  cheapest available proof that the abstraction is real — if rotation had
+  required touching the kernel, the claim that the kernel is blind to shape
+  would have been false.
 
 This is the same principle real physics engines use (Box2D gives polygons a
 radius; GJK reduces every convex pair to one support-function loop). I chose the
@@ -59,21 +57,21 @@ the visitor pattern. I rejected it deliberately: it reintroduces the same
 puts the math back inside the robot classes — the thing the project's hint warns
 against.
 
-The base class asks subclasses only to **describe themselves** (`core()` and
-`skinRadius()`). A subclass never implements a collision test. That is the whole
-trick, and it is why `isColliding()` is a one-liner.
+A subclass never implements a collision test. It answers exactly two questions
+about itself — `core()` and `skinRadius()` — and that is the whole contract.
+It is why `isColliding()` is a one-liner.
 
 ## Layout
 
-Strictly bottom-up; each header depends only on the one beneath it.
+Strictly bottom-up; each header depends only on the one beneath it, which is
+why one `#include` in `solution.hpp` is enough.
 
 | file | role |
 |------|------|
 | `vec2.hpp` | 2D vector primitives |
 | `geometry.hpp` | the convex-core distance kernel — **all** the math |
 | `robot.hpp` | `Robot`, `CircularRobot`, `RectangularRobot` |
-| `collision.hpp` | `clearance()`, `isColliding()` — policy and strategy, no math |
-| `visualizer.hpp` | ASCII field renderer (built on the kernel, adds no geometry) |
+| `collision.hpp` | `clearance()`, `isColliding()` — policy, not math |
 | `solution.hpp` | the single include the driver needs |
 | `main.cpp` | **untouched**, exactly as provided |
 | `demo.cpp` | extended, self-checking driver |
@@ -134,10 +132,10 @@ Being explicit about what this does **not** do:
   out — but that is the seam where it would go.
 - **Convex chassis only.** A concave robot must be decomposed into convex parts.
   This is the standard trade and every mainstream engine makes it.
-- **Broad phase is still `O(N^2)`.** `collidingPairs()` puts a bounding-circle
-  reject in front of the exact test, which kills most pairs cheaply, but it
-  still enumerates all of them. Past a few hundred robots the next step is a
-  spatial hash or sweep-and-prune so distant robots are never paired at all.
+- **`collidingPairs()` is `O(N^2)`.** Fine for a field of robots. If N grew I
+  would put a cheap bounding-circle reject in front of the exact test, and past
+  a few hundred robots switch to a spatial hash or sweep-and-prune so distant
+  robots are never paired at all.
 - **`ConvexCore` caps at 8 vertices,** deliberately, to keep collision queries
   allocation-free. Ample for any real chassis; it would need to change for
   arbitrary polygons.
@@ -154,7 +152,7 @@ where a dropped term hides). This is a fix, not a preference.
 
 ```
 make run        # the required driver, exactly as provided
-make run-demo   # extended driver: edge cases, rotation, sweep, field render
+make run-demo   # extended driver: edge cases, rotation, all-pairs sweep
 make clean
 ```
 
@@ -165,12 +163,8 @@ a second executable — the required driver stays provably pristine either way.
 `run_demo` **checks itself**: every case declares its expected result and the
 program exits non-zero if any disagree (currently 22/22). Printing booleans and
 eyeballing them is fine for eight cases, but it does not protect a refactor of
-the geometry kernel.
-
-### Cases `demo.cpp` adds
-
-Each targets a code path that could be wrong without any of the provided eight
-noticing:
+the geometry kernel. The cases it adds beyond the provided eight each target a
+code path that could be wrong without any of those eight noticing:
 
 - circles touching at exactly one point, and 0.001 apart
 - circle inside circle, rect inside rect, circle inside rect, rect inside circle

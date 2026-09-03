@@ -14,10 +14,8 @@
  * it does not protect a refactor of the geometry kernel.
  * ------------------------------------------------------------------------- */
 #include "solution.hpp"
-#include "visualizer.hpp"
 
 #include <cstdio>
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -172,26 +170,6 @@ int main() {
                     names[i].c_str(), names[j].c_str(),
                     collision::clearance(*field[i], *field[j]));
     }
-
-    // -----------------------------------------------------------------------
-    // Draw it, so the numbers above can actually be checked by eye.
-    // -----------------------------------------------------------------------
-    heading("The field");
-    viz::Field picture;
-    for (std::size_t i = 0; i < field.size(); ++i) picture.add(names[i], *field[i]);
-    picture.render(std::cout);
-
-    /* The whole-field view above cannot resolve the two tightest contacts --
-     * its cells are ~0.6 units across and those overlaps are ~0.1 units deep,
-     * so they correctly draw as clean misses. Zooming in on c4/r3 puts the
-     * actual contact on screen, and confirms it is a CORNER contact: the
-     * circle catches the bottom-right corner of r3, not either of its faces. */
-    heading("Zoom: the c4 / r3 corner contact (gap -0.076)");
-    viz::Field closeup;
-    closeup.add("c4", c4);
-    closeup.add("r3", r3);
-    closeup.setBounds(-14.0, -12.8, -1.4, -0.2);
-    closeup.render(std::cout);
 
     heading("Result");
     std::printf("  %d/%d checks passed.\n", g_checks - g_failures, g_checks);

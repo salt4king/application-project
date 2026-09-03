@@ -6,8 +6,8 @@
  * Vec2 -- a minimal 2D vector.
  *
  * Why hand-roll this instead of using std::pair or two loose doubles?
- * Because every layer above this one (shapes, distance math, the visualizer)
- * talks in terms of points and directions. Giving that concept a name, and
+ * Because every layer above this one (shapes, distance math, collision
+ * queries) talks in terms of points and directions. Giving that concept a name, and
  * giving it the operators you'd expect, means the geometry code below reads
  * like the math it implements instead of like index bookkeeping.
  *
