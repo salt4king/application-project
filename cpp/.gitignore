@@ -1,0 +1,4 @@
+# build artifacts
+*.o
+run_me
+run_demo
