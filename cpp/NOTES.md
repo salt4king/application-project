@@ -83,6 +83,40 @@ version had those four layers as four separate files. That was tidier in the
 abstract, but ~190 lines of code spread over six files reads as ceremony, and
 the namespaces already enforce the separation that mattered.
 
+### What each file contains
+
+**`geometry.hpp`** — two sections. Section 1 is `Vec2`: a 2D vector with `dot`,
+`cross`, `lengthSquared`, `distance` and `rotate`. Section 2 is `namespace
+geom`: `ConvexCore` (a fixed-capacity convex hull, max 8 vertices, so a
+collision query never allocates) and the three primitives that compose into
+`coreDistance`.
+
+**`robots.hpp`** — two sections. Section 1 is the model: `Robot` (abstract,
+demanding only `core()` and `skinRadius()`), `CircularRobot` and
+`RectangularRobot`. Section 2 is `namespace collision`: `kContactTolerance`,
+`clearance`, `areColliding`, `collidingPairs`, then the global `isColliding`
+the driver calls.
+
+**`solution.hpp`** — two lines. `#pragma once` and `#include "robots.hpp"`.
+Its only job is exposing the API to `main.cpp` so that file never changes.
+
+**`demo.cpp`** — the extended driver, built as a separate executable so the
+provided one stays untouched. Self-checking: every case declares its expected
+result and the program exits non-zero if any disagree.
+
+### Adding a testcase
+
+Add an `expect(...)` line to `demo.cpp`, then `make run-demo`:
+
+```cpp
+CircularRobot    a(0.0, 0.0, 1.0);
+RectangularRobot b(1.5, 0.0, 2.0, 2.0, 30.0);   // last arg = heading, optional
+expect("short description of the case", isColliding(a, b), /*expected*/ true, a, b);
+```
+
+`expect` prints PASS/FAIL plus the exact clearance, and tallies failures into
+the program's exit code. The provided eight cases in `main.cpp` are not touched.
+
 ## How it is built, and the correctness argument
 
 The kernel is three primitives, each a few lines of plain vector algebra:
