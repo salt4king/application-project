@@ -9,14 +9,12 @@
  *    - A function isColliding() that can take in any two Robots.
  */
 
-/* collision.hpp transitively pulls in the whole stack:
+/* The solution is two headers:
  *
- *      vec2.hpp       2D vector primitives
- *        └ geometry.hpp   the convex-core distance kernel (all the math)
- *            └ robot.hpp      Robot / CircularRobot / RectangularRobot
- *                └ collision.hpp  clearance(), isColliding()
+ *      geometry.hpp   Vec2, and the convex-core distance kernel (the math)
+ *        └ robots.hpp   Robot / CircularRobot / RectangularRobot, and
+ *                       isColliding() (the model and the query)
  *
- * One include is enough because the layering is strictly bottom-up: each
- * header depends only on the one beneath it, and nothing depends on this file.
- * See NOTES.md for the design rationale behind that stack. */
-#include "collision.hpp"
+ * robots.hpp includes geometry.hpp, so this one include exposes everything the
+ * driver needs. See NOTES.md for the design rationale. */
+#include "robots.hpp"

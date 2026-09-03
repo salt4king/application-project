@@ -63,18 +63,25 @@ It is why `isColliding()` is a one-liner.
 
 ## Layout
 
-Strictly bottom-up; each header depends only on the one beneath it, which is
-why one `#include` in `solution.hpp` is enough.
+Two headers, split on the one boundary that carries meaning — measuring versus
+modelling. The project's hint warns against putting collision math inside
+`isColliding()`, and keeping the math in its own file makes it structurally
+awkward to drift back there.
 
 | file | role |
 |------|------|
-| `vec2.hpp` | 2D vector primitives |
-| `geometry.hpp` | the convex-core distance kernel — **all** the math |
-| `robot.hpp` | `Robot`, `CircularRobot`, `RectangularRobot` |
-| `collision.hpp` | `clearance()`, `isColliding()` — policy, not math |
+| `geometry.hpp` | `Vec2`, plus the convex-core distance kernel — **all** the math |
+| `robots.hpp` | `Robot` / `CircularRobot` / `RectangularRobot`, and `isColliding()` |
 | `solution.hpp` | the single include the driver needs |
 | `main.cpp` | **untouched**, exactly as provided |
 | `demo.cpp` | extended, self-checking driver |
+
+Each header is split into two clearly marked sections, so the four original
+layers are still visible: `geometry.hpp` is `Vec2` then `namespace geom`, and
+`robots.hpp` is the robot classes then `namespace collision`. An earlier
+version had those four layers as four separate files. That was tidier in the
+abstract, but ~190 lines of code spread over six files reads as ceremony, and
+the namespaces already enforce the separation that mattered.
 
 ## How it is built, and the correctness argument
 
