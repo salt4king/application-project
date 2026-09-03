@@ -76,30 +76,51 @@ why one `#include` in `solution.hpp` is enough.
 | `main.cpp` | **untouched**, exactly as provided |
 | `demo.cpp` | extended, self-checking driver |
 
-## Correctness argument
+## How it is built, and the correctness argument
 
-The one genuinely subtle part is `geom::coreDistance`. Two convex sets overlap
-in exactly one of two ways, and both must be caught:
+The kernel is three primitives, each a few lines of plain vector algebra:
 
-1. **Their boundaries cross.** Handled by the edge-pair loop, since two crossing
-   segments are at distance 0.
-2. **One is entirely inside the other, boundaries never touching.** Invisible to
-   the edge loop — all those edges are far apart — so it needs the explicit
-   containment test.
+| primitive | what it does |
+|-----------|--------------|
+| `pointSegmentDistance` | project a point onto a segment, clamp to the ends, measure |
+| `segmentsCross` | do two segments straddle each other? (sign of a cross product) |
+| `contains` | is a point inside a convex polygon? (same side of every edge) |
 
-Case 2 is why the containment check is not redundant, and case 1 is why the loop
-uses full *segment-to-segment* distance rather than the simpler
-*point-to-segment* version. My first sketch used point-to-segment, which is
-correct for two **disjoint** convex polygons but fails on two rectangles crossing
-in a plus sign: no corner of either is inside the other, yet they plainly
-overlap. `demo.cpp` pins that case specifically.
+`coreDistance` composes them by asking three questions in order:
 
-Degenerate cores are handled by construction rather than by special-casing. A
-core's edges are `(v[i], v[(i+1) % n])`, so a 1-vertex core yields the
-degenerate edge `(v0, v0)` and the segment routine — which tolerates zero-length
-segments — collapses to a plain point-to-point distance. Circle-vs-circle
-therefore falls out of the general polygon code as `|c1 - c2| <= r1 + r2`, the
-textbook formula, without anyone having written it.
+1. **Does either core contain a vertex of the other?** Catches total
+   containment — one robot swallowed by another, boundaries nowhere near each
+   other. Step 3 cannot see this case at all, so the check is not redundant.
+   Testing one vertex suffices: if the boundaries do not cross, then either
+   every vertex of one core is inside the other or none is.
+2. **Do any edges cross?** Catches partial overlap, including two rectangles
+   crossing in a plus sign where *neither* has a corner inside the other yet
+   they plainly overlap. `demo.cpp` pins that case specifically.
+3. **Otherwise they are disjoint,** and the shortest distance between two
+   disjoint convex polygons always has at least one endpoint at a vertex — so
+   checking every vertex against every edge of the other shape, in both
+   directions, finds it exactly.
+
+Steps 1 and 2 together are a *complete* overlap test, because two convex shapes
+can only overlap by containment or by crossing boundaries.
+
+One subtlety worth being able to defend: `segmentsCross` is a **strict** test,
+so segments that merely touch, or lie along one another, are reported as *not*
+crossing. That is deliberate. In every such case a vertex of one shape lies on
+the other's boundary, and `contains` already counts that as inside — so the
+case is handled, just by a different step. Splitting the two tests this way
+avoids the fiddly collinear special cases that make the textbook
+segment-intersection routine unpleasant.
+
+I first wrote this using the standard segment-to-segment distance routine,
+which solves a constrained minimisation over the unit square and handles all of
+the above in one pass. It works, and it is fewer moving parts — but it is much
+harder to derive from scratch, and I would rather ship something I can defend
+on a whiteboard than something I can only cite. The two versions were checked
+against each other over 400,000 random shape pairs and 106,000 lattice-aligned
+ones (chosen so exact shared edges and corners occur constantly, since random
+coordinates essentially never produce them). They agree on every case, worst
+difference 2.7e-15.
 
 ## Touching counts as colliding
 

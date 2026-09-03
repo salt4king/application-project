@@ -21,29 +21,43 @@
  *      a rectangle is FOUR CORNERS      inflated by zero
  *
  * Both are "some convex set of points, grown outward by some radius". That is
- * a Minkowski sum of a convex polygon with a disc, and it is a rich enough
- * model to describe a circle, a rectangle (rotated or not), a capsule, a
- * rounded-corner bumper, or any convex chassis at all.
+ * a rich enough model to describe a circle, a rectangle (rotated or not), a
+ * capsule, a rounded-corner bumper, or any convex chassis at all.
  *
  * Once every robot is described that way, collision stops being a case
  * analysis and becomes a single inequality:
  *
  *      distance(coreA, coreB)  <=  skinA + skinB
  *
- * Proof sketch: inflating a set by r pushes its boundary outward by exactly r
- * in every direction, so two inflated sets touch precisely when the gap
- * between their cores has been eaten up by the two skins.
+ * Why that works: inflating a shape by r pushes its boundary outward by
+ * exactly r in every direction. So two inflated shapes touch precisely when
+ * the gap between their cores has been used up by the two skins.
  *
  * That inequality is the WHOLE collision system. Everything in this file
  * exists to compute its left-hand side, and the reduction is what lets
  * isColliding() stay a one-liner (see collision.hpp).
+ *
+ * HOW THE LEFT-HAND SIDE IS COMPUTED
+ * ----------------------------------
+ * Only three primitives, each built from nothing but dot and cross products:
+ *
+ *      pointSegmentDistance -- project a point onto a segment, clamp, measure
+ *      segmentsCross        -- do two segments straddle each other?
+ *      contains             -- is a point inside a convex polygon?
+ *
+ * coreDistance() composes those three into a general convex-polygon distance.
+ * I chose this decomposition over the textbook segment-to-segment distance
+ * routine (which solves a constrained minimisation) because these three are
+ * each a few lines of plain vector algebra, and I would rather ship something
+ * I can derive on a whiteboard than something I can only cite.
  * ------------------------------------------------------------------------- */
 namespace geom {
 
 /* Tolerance used only to detect genuinely degenerate geometry (a zero-length
- * edge). It is compared against SQUARED lengths, hence the very small value.
- * This is not the collision contact tolerance -- that lives in collision.hpp,
- * because it is a policy decision rather than a numerical one. */
+ * edge) and to treat "exactly on the boundary" as inside. Compared against
+ * squared lengths and cross products, hence the very small value. This is not
+ * the collision contact tolerance -- that lives in collision.hpp, because it
+ * is a policy decision rather than a numerical one. */
 constexpr double kDegenerateEpsilon = 1e-12;
 
 /* ---------------------------------------------------------------------------
@@ -52,11 +66,8 @@ constexpr double kDegenerateEpsilon = 1e-12;
  * Deliberately a fixed-capacity value type rather than a std::vector: a
  * collision check happens in the inner loop of a robot's control cycle, and
  * heap-allocating a vector per query per frame is exactly the kind of thing
- * that quietly wrecks real-time performance. Eight vertices is plenty for any
- * chassis you'd actually bolt together (it covers up to an octagon).
- *
- * INVARIANT: vertices are stored in consistent winding order (this code does
- * not care whether it is clockwise or counter-clockwise -- see contains()).
+ * that quietly wrecks real-time performance. Eight vertices covers any chassis
+ * you would actually bolt together (up to an octagon).
  * ------------------------------------------------------------------------- */
 struct ConvexCore {
     static constexpr int kMaxVertices = 8;
@@ -70,13 +81,12 @@ struct ConvexCore {
 
     /* Edge i runs from vertex i to vertex (i+1) mod n.
      *
-     * The modular wrap is doing something subtle and important here. For a
-     * 1-vertex core (a circle) it yields the single DEGENERATE edge (v0, v0),
-     * and for a 2-vertex core (a capsule) it yields the same segment twice.
-     * That means the distance routine below never needs to special-case
-     * "this shape is really just a point" -- the degenerate edge falls out of
-     * the general formula and the point-vs-point case is handled by the same
-     * code path as polygon-vs-polygon. */
+     * The modular wrap does something quietly important. For a 1-vertex core
+     * (a circle) it yields the DEGENERATE edge (v0, v0), and for a 2-vertex
+     * core it yields the same segment twice. So the routines below never need
+     * to ask "is this shape really just a point?" -- the degenerate edge falls
+     * out of the general formula, and circle-vs-circle ends up travelling the
+     * same code path as rectangle-vs-rectangle. */
     Vec2 edgeStart(int i) const { return v[i]; }
     Vec2 edgeEnd(int i)   const { return v[(i + 1) % n]; }
     int  edgeCount()      const { return n; }
@@ -89,87 +99,79 @@ inline ConvexCore makePoint(Vec2 p) {
 }
 
 /* ---------------------------------------------------------------------------
- * Shortest distance between two line SEGMENTS.
+ * PRIMITIVE 1: shortest distance from a point to a line segment.
  *
- * This is the workhorse. It is Ericson's closest-point-between-segments
- * (Real-Time Collision Detection, 5.1.9), parameterising each segment as
- * P(s) = p1 + s*d1 and Q(t) = p2 + t*d2 with s,t clamped to [0,1], then
- * minimising |P(s) - Q(t)|.
+ * Three steps, all elementary:
  *
- * Two properties matter for us:
- *   1. It returns 0 when the segments intersect. That is what detects two
- *      rectangles overlapping in a "plus sign", where neither shape has a
- *      corner inside the other but their edges still cross.
- *   2. It stays correct when either or both segments have zero length. That
- *      is what makes circles work, since a circle's core is a single point.
+ *   1. Project p onto the infinite line through a and b. The projection sits
+ *      at parameter t along that line, where t = dot(p-a, ab) / dot(ab, ab).
+ *      (dot(p-a, ab) is how far along ab the point reaches; dividing by
+ *      dot(ab, ab) = |ab|^2 turns that into a fraction of the way along.)
+ *   2. Clamp t to [0, 1]. The infinite line is not the segment; if the
+ *      projection falls off either end, the nearest point IS that end.
+ *   3. Measure to the point we landed on.
+ *
+ * The zero-length guard is what makes circles work: a circle's core is a
+ * single point, i.e. a segment with a == b, and then the answer is just
+ * |p - a|.
  * ------------------------------------------------------------------------- */
-inline double segmentSegmentDistance(Vec2 p1, Vec2 q1, Vec2 p2, Vec2 q2) {
-    const Vec2 d1 = q1 - p1;   // direction and length of segment 1
-    const Vec2 d2 = q2 - p2;   // direction and length of segment 2
-    const Vec2 r  = p1 - p2;
+inline double pointSegmentDistance(Vec2 p, Vec2 a, Vec2 b) {
+    const Vec2   ab      = b - a;
+    const double lenSqrd = lengthSquared(ab);
 
-    const double a = lengthSquared(d1);   // squared length of seg 1, always >= 0
-    const double e = lengthSquared(d2);   // squared length of seg 2, always >= 0
-    const double f = dot(d2, r);
+    // Degenerate segment: it is really a point, so measure straight to it.
+    if (lenSqrd <= kDegenerateEpsilon) return distance(p, a);
 
-    double s = 0.0;   // parameter along segment 1
-    double t = 0.0;   // parameter along segment 2
-
-    if (a <= kDegenerateEpsilon && e <= kDegenerateEpsilon) {
-        // Both segments are points (e.g. circle vs circle). s = t = 0, and the
-        // result below reduces to plain |p1 - p2|.
-    } else if (a <= kDegenerateEpsilon) {
-        // Segment 1 is a point: just project it onto segment 2.
-        t = std::clamp(f / e, 0.0, 1.0);
-    } else if (e <= kDegenerateEpsilon) {
-        // Segment 2 is a point: project it onto segment 1.
-        s = std::clamp(-dot(d1, r) / a, 0.0, 1.0);
-    } else {
-        // The general case: two honest segments.
-        const double c     = dot(d1, r);
-        const double b     = dot(d1, d2);
-        const double denom = a * e - b * b;   // >= 0 by Cauchy-Schwarz
-
-        // denom == 0 means the segments are parallel, so there is no unique
-        // closest pair. Pinning s = 0 and letting the clamping below sort out
-        // t picks a valid representative of the (tied) minimum.
-        s = (denom > kDegenerateEpsilon)
-                ? std::clamp((b * f - c * e) / denom, 0.0, 1.0)
-                : 0.0;
-
-        // Solve for t given s, then, if that lands outside the segment, clamp
-        // it back onto the segment and re-solve for s. This two-step clamp is
-        // what makes the routine correct for segments rather than infinite
-        // lines.
-        t = (b * s + f) / e;
-        if (t < 0.0) {
-            t = 0.0;
-            s = std::clamp(-c / a, 0.0, 1.0);
-        } else if (t > 1.0) {
-            t = 1.0;
-            s = std::clamp((b - c) / a, 0.0, 1.0);
-        }
-    }
-
-    return distance(p1 + d1 * s, p2 + d2 * t);
+    const double t = std::clamp(dot(p - a, ab) / lenSqrd, 0.0, 1.0);
+    return distance(p, a + ab * t);
 }
 
 /* ---------------------------------------------------------------------------
- * Is a point inside a convex core?
+ * PRIMITIVE 2: do two segments cross?
  *
- * Walk the edges and look at which side of each the point falls on, via the
- * sign of the 2D cross product. For a convex polygon, an interior point is on
- * the same side of every edge.
+ * cross(d, q - origin) is positive on one side of the direction d and negative
+ * on the other, so its SIGN answers "which side of this line is that point?".
  *
- * Written to be winding-order agnostic (it accepts "all non-negative" OR
- * "all non-positive") so that a caller who hands us clockwise vertices gets a
- * correct answer instead of a silently inverted one. Robustness here is cheap;
- * a winding bug here would be invisible and awful to track down.
+ * Two segments cross when each one straddles the other's line: p2 and q2 sit
+ * on opposite sides of segment 1, AND p1 and q1 sit on opposite sides of
+ * segment 2. Both conditions are needed -- one alone only says the segments
+ * would cross if extended far enough.
  *
- * Cores with fewer than 3 vertices enclose no area, so nothing is "inside"
- * them. Returning false is not a cop-out: a point lying ON such a degenerate
- * core is already reported as distance 0 by the segment routine above, so the
- * case is covered -- just elsewhere.
+ * This is a strict test, so segments that merely touch or lie along each other
+ * are reported as NOT crossing. That is deliberate, not an oversight: in every
+ * such case a vertex of one shape lies on the other's boundary, and
+ * contains() below already counts that as inside. Keeping the two tests
+ * strictly separated avoids the fiddly collinear special cases that make the
+ * textbook version of this routine so unpleasant.
+ * ------------------------------------------------------------------------- */
+inline bool segmentsCross(Vec2 p1, Vec2 q1, Vec2 p2, Vec2 q2) {
+    const Vec2 d1 = q1 - p1;
+    const Vec2 d2 = q2 - p2;
+
+    const double a1 = cross(d1, p2 - p1);   // side of segment 1 that p2 is on
+    const double a2 = cross(d1, q2 - p1);   // ... and q2
+    const double b1 = cross(d2, p1 - p2);   // side of segment 2 that p1 is on
+    const double b2 = cross(d2, q1 - p2);   // ... and q1
+
+    return ((a1 > 0.0) != (a2 > 0.0)) && ((b1 > 0.0) != (b2 > 0.0));
+}
+
+/* ---------------------------------------------------------------------------
+ * PRIMITIVE 3: is a point inside a convex core?
+ *
+ * Walk the edges and ask which side of each the point falls on, using the sign
+ * of the cross product again. For a CONVEX polygon an interior point is on the
+ * same side of every edge -- that is what convexity means here, and it is why
+ * this test is three lines rather than a ray-casting loop.
+ *
+ * Written to be winding-order agnostic (it accepts "all non-negative" OR "all
+ * non-positive") so a caller who hands us clockwise vertices gets a correct
+ * answer instead of a silently inverted one.
+ *
+ * Cores with fewer than 3 vertices enclose no area, so nothing is inside them.
+ * Returning false is not a cop-out: a point lying ON such a degenerate core is
+ * already reported as distance 0 by primitive 1, so that case is covered --
+ * just elsewhere.
  * ------------------------------------------------------------------------- */
 inline bool contains(const ConvexCore& core, Vec2 p) {
     if (core.n < 3) return false;
@@ -184,46 +186,68 @@ inline bool contains(const ConvexCore& core, Vec2 p) {
         if (side < -kDegenerateEpsilon) anyNegative = true;
     }
 
-    // Points exactly on the boundary trip neither flag and so count as inside,
-    // which is what we want: touching is contact.
+    // A point exactly on the boundary trips neither flag and so counts as
+    // inside, which is what we want here: touching is contact.
     return !(anyPositive && anyNegative);
 }
 
 /* ---------------------------------------------------------------------------
  * Shortest distance between two convex cores. Returns 0 if they overlap.
  *
- * Two convex sets overlap in exactly one of two ways, and we need both:
+ * Three questions, in order:
  *
- *   (a) their boundaries cross -- caught by the edge-pair loop, since two
- *       crossing segments are at distance 0;
- *   (b) one is entirely inside the other, with boundaries never touching --
- *       missed entirely by the edge loop (all those edges are far apart!),
- *       which is why the containment test below is not redundant.
+ *   1. Does either core contain a vertex of the other? That catches total
+ *      containment -- one robot swallowed by another, with their boundaries
+ *      nowhere near each other. The distance loop in step 3 cannot see this
+ *      case at all, which is why the check is not redundant.
  *
- * Testing a single vertex per core is sufficient for case (b): if the
- * boundaries do not cross, then either every vertex of one is inside the other
- * or none is. And if the boundaries DO cross, we return 0 via the edge loop
- * regardless of what the containment test happened to say.
+ *      Testing a single vertex is enough: if the boundaries do not cross, then
+ *      either every vertex of one core is inside the other or none is.
  *
- * Cost is O(|A| * |B|) segment tests -- at most 16 for two rectangles. For
- * chassis-sized inputs that is far cheaper than the branchier alternatives,
- * and it is completely branch-free with respect to shape TYPE, which is the
- * whole point.
+ *   2. Do any of their edges cross? That catches partial overlap, including
+ *      the awkward case of two rectangles crossing in a plus sign, where
+ *      NEITHER shape has a corner inside the other yet they plainly overlap.
+ *
+ *   3. Otherwise they are disjoint, and the shortest distance between two
+ *      disjoint convex polygons is always achieved with at least one endpoint
+ *      at a vertex -- so checking every vertex against every edge of the other
+ *      shape (both directions) finds it exactly.
+ *
+ * Steps 1 and 2 together are a complete overlap test, because two convex
+ * shapes can only overlap by containment or by crossing boundaries.
+ *
+ * Cost is O(|A| * |B|), at most 16 tests per stage for two rectangles. That is
+ * nothing, and it is completely branch-free with respect to shape TYPE, which
+ * is the entire point of the design.
  * ------------------------------------------------------------------------- */
 inline double coreDistance(const ConvexCore& a, const ConvexCore& b) {
     if (a.n == 0 || b.n == 0) return std::numeric_limits<double>::infinity();
 
-    // Case (b): total containment.
+    // 1. Containment.
     if (contains(a, b.v[0]) || contains(b, a.v[0])) return 0.0;
 
-    // Case (a) and the disjoint case: closest approach of the boundaries.
-    double best = std::numeric_limits<double>::infinity();
+    // 2. Crossing boundaries.
     for (int i = 0; i < a.edgeCount(); ++i) {
         for (int j = 0; j < b.edgeCount(); ++j) {
-            best = std::min(best, segmentSegmentDistance(
-                a.edgeStart(i), a.edgeEnd(i),
-                b.edgeStart(j), b.edgeEnd(j)));
-            if (best <= 0.0) return 0.0;   // cannot do better; bail out early
+            if (segmentsCross(a.edgeStart(i), a.edgeEnd(i),
+                              b.edgeStart(j), b.edgeEnd(j))) {
+                return 0.0;
+            }
+        }
+    }
+
+    // 3. Disjoint: closest approach, vertex against edge, in both directions.
+    double best = std::numeric_limits<double>::infinity();
+    for (int i = 0; i < a.n; ++i) {
+        for (int j = 0; j < b.edgeCount(); ++j) {
+            best = std::min(best, pointSegmentDistance(
+                a.v[i], b.edgeStart(j), b.edgeEnd(j)));
+        }
+    }
+    for (int i = 0; i < b.n; ++i) {
+        for (int j = 0; j < a.edgeCount(); ++j) {
+            best = std::min(best, pointSegmentDistance(
+                b.v[i], a.edgeStart(j), a.edgeEnd(j)));
         }
     }
     return best;
