@@ -11,12 +11,12 @@
 static int g_checks = 0;
 static int g_failures = 0;
 
-static void expect(const string& what, bool actual, bool wanted,
+static void expect(const std::string& what, bool actual, bool wanted,
                    const Robot& a, const Robot& b) {
     ++g_checks;
     const bool ok = (actual == wanted);
     if (!ok) ++g_failures;
-    printf("  [%s] %-46s %-13s (gap %+9.6f)\n",
+    std::printf("  [%s] %-46s %-13s (gap %+9.6f)\n",
                 ok ? "PASS" : "FAIL",
                 what.c_str(),
                 actual ? "colliding" : "not colliding",
@@ -24,9 +24,9 @@ static void expect(const string& what, bool actual, bool wanted,
 }
 
 static void heading(const char* title) {
-    printf("\n\033[1m%s\033[0m\n", title);
-    for (size_t i = 0; i < string(title).size(); ++i) putchar('-');
-    putchar('\n');
+    std::printf("\n\033[1m%s\033[0m\n", title);
+    for (std::size_t i = 0; i < std::string(title).size(); ++i) std::putchar('-');
+    std::putchar('\n');
 }
 
 int main() {
@@ -137,23 +137,23 @@ int main() {
     // -----------------------------------------------------------------------
     heading("All-pairs sweep over the full field");
 
-    const vector<string> names =
+    const std::vector<std::string> names =
         {"c1","c2","c3","c4","r1","r2","r3","r4","r5","r6"};
-    const vector<const Robot*> field =
+    const std::vector<const Robot*> field =
         {&c1,&c2,&c3,&c4,&r1,&r2,&r3,&r4,&r5,&r6};
 
     const auto hits = collision::collidingPairs(field);
-    printf("  %d robots, %d pairs examined, %d collisions found:\n",
+    std::printf("  %d robots, %d pairs examined, %d collisions found:\n",
                 static_cast<int>(field.size()),
                 static_cast<int>(field.size() * (field.size() - 1) / 2),
                 static_cast<int>(hits.size()));
     for (const auto& [i, j] : hits) {
-        printf("      %-3s <-> %-3s   (gap %+9.6f)\n",
+        std::printf("      %-3s <-> %-3s   (gap %+9.6f)\n",
                     names[i].c_str(), names[j].c_str(),
                     collision::clearance(*field[i], *field[j]));
     }
 
     heading("Result");
-    printf("  %d/%d checks passed.\n", g_checks - g_failures, g_checks);
+    std::printf("  %d/%d checks passed.\n", g_checks - g_failures, g_checks);
     return g_failures == 0 ? 0 : 1;
 }

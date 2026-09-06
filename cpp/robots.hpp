@@ -110,11 +110,11 @@ inline bool areColliding(const Robot& a, const Robot& b) {
 
 // "Whether any two robots are colliding" is really this question. Naive
 // O(N^2) on purpose; see NOTES.md for where I'd take it if N grew.
-inline vector<pair<int, int>>
-collidingPairs(const vector<const Robot*>& robots) {
-    vector<pair<int, int>> hits;
-    for (size_t i = 0; i < robots.size(); ++i)
-        for (size_t j = i + 1; j < robots.size(); ++j)
+inline std::vector<std::pair<int, int>>
+collidingPairs(const std::vector<const Robot*>& robots) {
+    std::vector<std::pair<int, int>> hits;
+    for (std::size_t i = 0; i < robots.size(); ++i)
+        for (std::size_t j = i + 1; j < robots.size(); ++j)
             if (areColliding(*robots[i], *robots[j]))
                 hits.emplace_back(static_cast<int>(i), static_cast<int>(j));
     return hits;

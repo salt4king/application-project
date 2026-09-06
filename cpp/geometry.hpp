@@ -4,8 +4,6 @@
 #include <cmath>
 #include <limits>
 
-using namespace std;
-
 /* geometry.hpp -- vector math and the collision kernel.
  *
  * THE IDEA: every chassis is a convex CORE (a few points) plus a SKIN (a
@@ -37,10 +35,10 @@ constexpr double dot(Vec2 a, Vec2 b) { return a.x * b.x + a.y * b.y; }
 constexpr double cross(Vec2 a, Vec2 b) { return a.x * b.y - a.y * b.x; }
 
 constexpr double lengthSquared(Vec2 v) { return dot(v, v); }
-inline double distance(Vec2 a, Vec2 b) { return sqrt(lengthSquared(a - b)); }
+inline double distance(Vec2 a, Vec2 b) { return std::sqrt(lengthSquared(a - b)); }
 
 inline Vec2 rotate(Vec2 v, double radians) {
-    const double c = cos(radians), s = sin(radians);
+    const double c = std::cos(radians), s = std::sin(radians);
     return {v.x * c - v.y * s, v.x * s + v.y * c};
 }
 
@@ -83,7 +81,7 @@ inline double pointSegmentDistance(Vec2 p, Vec2 a, Vec2 b) {
     const double lenSqrd = lengthSquared(ab);
     if (lenSqrd <= kDegenerateEpsilon) return distance(p, a);
 
-    const double t = clamp(dot(p - a, ab) / lenSqrd, 0.0, 1.0);
+    const double t = std::clamp(dot(p - a, ab) / lenSqrd, 0.0, 1.0);
     return distance(p, a + ab * t);
 }
 
@@ -142,7 +140,7 @@ inline bool contains(const ConvexCore& core, Vec2 p) {
  * convex shapes can overlap.
  */
 inline double coreDistance(const ConvexCore& a, const ConvexCore& b) {
-    if (a.n == 0 || b.n == 0) return numeric_limits<double>::infinity();
+    if (a.n == 0 || b.n == 0) return std::numeric_limits<double>::infinity();
 
     if (contains(a, b.v[0]) || contains(b, a.v[0])) return 0.0;
 
@@ -152,15 +150,15 @@ inline double coreDistance(const ConvexCore& a, const ConvexCore& b) {
                               b.edgeStart(j), b.edgeEnd(j)))
                 return 0.0;
 
-    double best = numeric_limits<double>::infinity();
+    double best = std::numeric_limits<double>::infinity();
     for (int i = 0; i < a.n; ++i)
         for (int j = 0; j < b.edgeCount(); ++j)
-            best = min(best, pointSegmentDistance(
+            best = std::min(best, pointSegmentDistance(
                 a.v[i], b.edgeStart(j), b.edgeEnd(j)));
 
     for (int i = 0; i < b.n; ++i)
         for (int j = 0; j < a.edgeCount(); ++j)
-            best = min(best, pointSegmentDistance(
+            best = std::min(best, pointSegmentDistance(
                 b.v[i], a.edgeStart(j), a.edgeEnd(j)));
 
     return best;
