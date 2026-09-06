@@ -40,8 +40,6 @@
  *      core()        -- its convex hull of points, in world space
  *      skinRadius()  -- how far that hull is inflated
  *
- * Two questions. That is the entire contract. Adding a new chassis is one new
- * class and zero edits anywhere else -- that is the payoff.
  * ========================================================================= */
 class Robot {
 public:
