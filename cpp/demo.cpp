@@ -1,18 +1,4 @@
-/* ---------------------------------------------------------------------------
- * demo.cpp -- extended driver.
- *
- * main.cpp is left byte-for-byte untouched, because cpp/README.md says not to
- * modify it. The root README separately invites additions to the driver, so
- * the extra work lives here instead, in its own executable:
- *
- *      make run        -> the required driver, exactly as provided
- *      make run-demo   -> everything below
- *
- * Unlike the provided driver, this one CHECKS itself: every case states the
- * answer it expects and the program exits non-zero if any disagree. Printing
- * booleans and eyeballing them is fine for eight cases; it does not scale, and
- * it does not protect a refactor of the geometry kernel.
- * ------------------------------------------------------------------------- */
+// demo.cpp -- extended driver, in its own executable so main.cpp stays untouched.
 #include "solution.hpp"
 
 #include <cstdio>
@@ -25,12 +11,12 @@
 static int g_checks = 0;
 static int g_failures = 0;
 
-static void expect(const std::string& what, bool actual, bool wanted,
+static void expect(const string& what, bool actual, bool wanted,
                    const Robot& a, const Robot& b) {
     ++g_checks;
     const bool ok = (actual == wanted);
     if (!ok) ++g_failures;
-    std::printf("  [%s] %-46s %-13s (gap %+9.6f)\n",
+    printf("  [%s] %-46s %-13s (gap %+9.6f)\n",
                 ok ? "PASS" : "FAIL",
                 what.c_str(),
                 actual ? "colliding" : "not colliding",
@@ -38,9 +24,9 @@ static void expect(const std::string& what, bool actual, bool wanted,
 }
 
 static void heading(const char* title) {
-    std::printf("\n\033[1m%s\033[0m\n", title);
-    for (std::size_t i = 0; i < std::string(title).size(); ++i) std::putchar('-');
-    std::putchar('\n');
+    printf("\n\033[1m%s\033[0m\n", title);
+    for (size_t i = 0; i < string(title).size(); ++i) putchar('-');
+    putchar('\n');
 }
 
 int main() {
@@ -135,11 +121,7 @@ int main() {
 
     // A square turned 45 degrees is a diamond; its corner reaches further than
     // its flat side did, which is a classic source of axis-aligned-only bugs.
-    /* Reach check: the square's flat side reaches x = 1.0, but its corner
-     * reaches x = sqrt(2) ~= 1.414. Parking the probe so its near edge sits at
-     * x = 1.3 puts it between those two numbers -- clear of the flat side,
-     * caught by the corner. (I first placed it at 2.2, which is outside BOTH
-     * reaches; the test failed and the code was right.) */
+    // Reach check: the square's flat side reaches x = 1.0, but its corner reaches x = sqrt(2) ~= 1.414.
     CircularRobot probe(1.8, 0.0, 0.5);
     RectangularRobot square(0.0, 0.0, 2.0, 2.0);
     expect("circle clears an axis-aligned square", isColliding(square, probe), false, square, probe);
@@ -155,23 +137,23 @@ int main() {
     // -----------------------------------------------------------------------
     heading("All-pairs sweep over the full field");
 
-    const std::vector<std::string> names =
+    const vector<string> names =
         {"c1","c2","c3","c4","r1","r2","r3","r4","r5","r6"};
-    const std::vector<const Robot*> field =
+    const vector<const Robot*> field =
         {&c1,&c2,&c3,&c4,&r1,&r2,&r3,&r4,&r5,&r6};
 
     const auto hits = collision::collidingPairs(field);
-    std::printf("  %d robots, %d pairs examined, %d collisions found:\n",
+    printf("  %d robots, %d pairs examined, %d collisions found:\n",
                 static_cast<int>(field.size()),
                 static_cast<int>(field.size() * (field.size() - 1) / 2),
                 static_cast<int>(hits.size()));
     for (const auto& [i, j] : hits) {
-        std::printf("      %-3s <-> %-3s   (gap %+9.6f)\n",
+        printf("      %-3s <-> %-3s   (gap %+9.6f)\n",
                     names[i].c_str(), names[j].c_str(),
                     collision::clearance(*field[i], *field[j]));
     }
 
     heading("Result");
-    std::printf("  %d/%d checks passed.\n", g_checks - g_failures, g_checks);
+    printf("  %d/%d checks passed.\n", g_checks - g_failures, g_checks);
     return g_failures == 0 ? 0 : 1;
 }
