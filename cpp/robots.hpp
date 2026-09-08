@@ -108,8 +108,6 @@ inline bool areColliding(const Robot& a, const Robot& b) {
     return clearance(a, b) <= kContactTolerance;
 }
 
-// "Whether any two robots are colliding" is really this question. Naive
-// O(N^2) on purpose; see NOTES.md for where I'd take it if N grew.
 inline std::vector<std::pair<int, int>>
 collidingPairs(const std::vector<const Robot*>& robots) {
     std::vector<std::pair<int, int>> hits;
